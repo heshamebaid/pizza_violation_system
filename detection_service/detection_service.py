@@ -75,7 +75,7 @@ def send_frame_to_stream(frame):
         _, jpeg = cv2.imencode('.jpg', frame)
         frame_bytes = jpeg.tobytes()
         requests.post(FRAME_STREAM_URL, data=frame_bytes, headers={"Content-Type": "image/jpeg"})
-    except Exception as e:
+    except Exception    as e:
         print("Could not send frame to stream:", e)
 
 # --- SAFELY FORMAT DETECTIONS ---
@@ -111,7 +111,7 @@ CLASS_HAND = 0
 CLASS_PERSON = 1
 CLASS_PIZZA = 2
 CLASS_SCOOPER = 3
-CONF_THRESH_HAND = 0.2
+CONF_THRESH_HAND = 0.1  # Lowered threshold for hand detection
 CONF_THRESH_PIZZA = 0.2
 CONF_THRESH_SCOOPER = 0.05  # Lower threshold for scooper
 
@@ -204,48 +204,32 @@ def callback(ch, method, properties, body):
     scooper_tracks = scooper_tracker.update_tracks(scooper_detections, frame=frame)
     scooper_bboxes = [tuple(t.to_ltrb()) for t in scooper_tracks if t.is_confirmed()]
 
-    # --- Enhanced logic per hand ---
+    # --- Stateful, sequential violation logic ---
     for track in hand_tracks:
         if not track.is_confirmed():
             continue
         hand_id = track.track_id
         hand_bbox = tuple(track.to_ltrb())
-        state = hand_states.get(hand_id, {
-            'state': 'init',
-            'using_scooper': False,
-            'last_pos': None,
-            'frames_in_roi': 0,
-            'frames_out_roi': 0
-        })
-
-        # Check if hand is in any ROI
-        if in_any_roi(hand_bbox, ROIS):
-            state['frames_in_roi'] += 1
-            state['frames_out_roi'] = 0
-            # Use IOU to associate with scooper
-            state['using_scooper'] = any(iou(hand_bbox, s) > 0.1 for s in scooper_bboxes)
-            if state['state'] != 'in_roi':
-                print(f"[Hand {hand_id}] entered ROI.")
-            state['state'] = 'in_roi'
-        else:
-            state['frames_out_roi'] += 1
-            if state['state'] == 'in_roi' and state['frames_out_roi'] < 5:
-                # Buffer: wait a few frames before considering as exited
-                continue
-            if state['state'] == 'in_roi':
-                # Hand left ROI, check if it goes to pizza
-                if hand_near_pizza(hand_bbox, pizzas):
-                    if not state['using_scooper']:
-                        print(f"[Violation] Hand {hand_id} touched pizza after ROI without scooper!")
-                        violation_count += 1
-                        update_streaming_service(violation_count)
-                    else:
-                        print(f"[Hand {hand_id}] used scooper correctly.")
-                    state['state'] = 'done'
-                else:
-                    state['state'] = 'exited_roi'
-                    print(f"[Hand {hand_id}] exited ROI but did not touch pizza.")
-        state['last_pos'] = hand_bbox
+        # Get or initialize state for this hand
+        state = hand_states.get(hand_id, {"was_in_roi": False})
+        # Check intersection with any ROI
+        in_roi = any(iou(hand_bbox, (roi['x1'], roi['y1'], roi['x2'], roi['y2'])) > 0.1 for roi in ROIS)
+        if in_roi:
+            state["was_in_roi"] = True
+        # Check intersection with any pizza
+        on_pizza = any(iou(hand_bbox, pizza) > 0.1 for pizza in pizzas)
+        # Check if hand is holding a scooper
+        holding_scooper = any(iou(hand_bbox, s) > 0.1 for s in scooper_bboxes)
+        # Violation: hand was in ROI, now on pizza, and not holding scooper
+        if on_pizza and state["was_in_roi"]:
+            if not holding_scooper:
+                print(f"[Violation] Hand {hand_id} touched pizza after ROI without scooper!")
+                violation_count += 1
+                update_streaming_service(violation_count)
+            else:
+                print(f"[Hand {hand_id}] used scooper correctly after ROI.")
+            # Reset after pizza touch
+            state["was_in_roi"] = False
         hand_states[hand_id] = state
 
     print(f"[Frame {frame_id}] Violations: {violation_count}")

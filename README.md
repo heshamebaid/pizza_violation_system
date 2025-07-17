@@ -12,7 +12,7 @@ This project is a microservices-based computer vision system for monitoring hygi
 - Detects hands, scoopers, pizzas, and persons using YOLO
 - Tracks objects with DeepSORT
 - Supports multiple user-defined ROIs (e.g., protein containers)
-- Flags violations if a hand grabs ingredients from any ROI and touches pizza without a scooper
+- Flags violations only if a hand intersects an ROI and then later touches the pizza without holding a scooper. If the hand is holding a scooper when touching the pizza, no violation is flagged. Each hand is tracked independently across frames, and the ROI state is reset after the hand touches the pizza.
 - Streams annotated video and violation count to a web frontend
 - Modular microservices architecture (frame reader, detection, streaming, frontend)
 
@@ -28,6 +28,13 @@ This project is a microservices-based computer vision system for monitoring hygi
 ### 2. Detection Service (`detection_service/`)
 **Role:** Subscribes to the message broker, performs object detection and tracking, applies violation logic, and updates the streaming service.
 - **Technologies:** Python, Ultralytics YOLO, DeepSORT, OpenCV, pika, requests
+- **Logic Summary:**
+    - Each hand is tracked independently across frames.
+    - If a hand intersects an ROI, it is marked as "was in ROI".
+    - When that hand later touches the pizza:
+        - If holding a scooper: **No violation**
+        - If not holding a scooper: **Violation flagged**
+    - After touching the pizza, the hand's ROI state is reset.
 - **How it works:** Receives frames, runs YOLO, tracks hands/scoopers, checks ROIs, flags violations, sends results to streaming service.
 
 ### 3. Streaming Service (`streaming_service/`)
