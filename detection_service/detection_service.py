@@ -26,7 +26,8 @@ def load_rois():
 ROIS = load_rois()
 
 # --- TRACKERS ---
-hand_tracker = DeepSort(max_age=30)
+# Tune DeepSORT: hand_tracker with higher max_age and min_hits
+hand_tracker = DeepSort(max_age=60, n_init=2)
 scooper_tracker = DeepSort(max_age=30)
 
 # --- STATE ---
@@ -111,7 +112,7 @@ CLASS_HAND = 0
 CLASS_PERSON = 1
 CLASS_PIZZA = 2
 CLASS_SCOOPER = 3
-CONF_THRESH_HAND = 0.1  # Lowered threshold for hand detection
+CONF_THRESH_HAND = 0.05  # Lowered threshold for hand detection
 CONF_THRESH_PIZZA = 0.2
 CONF_THRESH_SCOOPER = 0.05  # Lower threshold for scooper
 
@@ -205,13 +206,28 @@ def callback(ch, method, properties, body):
     scooper_bboxes = [tuple(t.to_ltrb()) for t in scooper_tracks if t.is_confirmed()]
 
     # --- Stateful, sequential violation logic ---
+    MAX_MISSING_FRAMES = 5  # Temporal smoothing for ghost tracks
+    active_hand_ids = set()
     for track in hand_tracks:
         if not track.is_confirmed():
+            # Temporal smoothing: keep state for ghost tracks
+            hand_id = track.track_id
+            state = hand_states.get(hand_id)
+            if state is not None:
+                state['missing_frames'] = state.get('missing_frames', 0) + 1
+                if state['missing_frames'] <= MAX_MISSING_FRAMES:
+                    # Treat as still present
+                    hand_states[hand_id] = state
+                    continue
+                else:
+                    # Remove state if missing too long
+                    hand_states.pop(hand_id, None)
             continue
         hand_id = track.track_id
         hand_bbox = tuple(track.to_ltrb())
         # Get or initialize state for this hand
-        state = hand_states.get(hand_id, {"was_in_roi": False})
+        state = hand_states.get(hand_id, {"was_in_roi": False, "missing_frames": 0})
+        state['missing_frames'] = 0  # Reset missing frame count on detection
         # Check intersection with any ROI
         in_roi = any(iou(hand_bbox, (roi['x1'], roi['y1'], roi['x2'], roi['y2'])) > 0.1 for roi in ROIS)
         if in_roi:
@@ -231,6 +247,17 @@ def callback(ch, method, properties, body):
             # Reset after pizza touch
             state["was_in_roi"] = False
         hand_states[hand_id] = state
+        active_hand_ids.add(hand_id)
+
+    # Clean up hand_states for tracks missing too long
+    to_remove = []
+    for hand_id, state in hand_states.items():
+        if hand_id not in active_hand_ids:
+            state['missing_frames'] = state.get('missing_frames', 0) + 1
+            if state['missing_frames'] > MAX_MISSING_FRAMES:
+                to_remove.append(hand_id)
+    for hand_id in to_remove:
+        hand_states.pop(hand_id, None)
 
     print(f"[Frame {frame_id}] Violations: {violation_count}")
 

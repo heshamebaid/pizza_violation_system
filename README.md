@@ -13,6 +13,9 @@ This project is a microservices-based computer vision system for monitoring hygi
 - Tracks objects with DeepSORT
 - Supports multiple user-defined ROIs (e.g., protein containers)
 - Flags violations only if a hand intersects an ROI and then later touches the pizza without holding a scooper. If the hand is holding a scooper when touching the pizza, no violation is flagged. Each hand is tracked independently across frames, and the ROI state is reset after the hand touches the pizza.
+- Lowered hand detection threshold for higher recall, improving detection of small or partially occluded hands.
+- Tuned DeepSORT tracking parameters (higher max_age, min_hits) for more robust hand tracking, especially with multiple workers.
+- Temporal smoothing: hand tracks are kept alive for a few frames even if missed, handling short occlusions and improving multi-worker tracking.
 - Streams annotated video and violation count to a web frontend
 - Modular microservices architecture (frame reader, detection, streaming, frontend)
 
@@ -35,6 +38,10 @@ This project is a microservices-based computer vision system for monitoring hygi
         - If holding a scooper: **No violation**
         - If not holding a scooper: **Violation flagged**
     - After touching the pizza, the hand's ROI state is reset.
+- **Robustness Improvements:**
+    - Lowered hand detection threshold for higher recall.
+    - DeepSORT tracker tuned with higher max_age and min_hits for better continuity.
+    - Temporal smoothing: hand tracks are kept alive for a few frames even if missed, handling short occlusions and improving multi-worker tracking.
 - **How it works:** Receives frames, runs YOLO, tracks hands/scoopers, checks ROIs, flags violations, sends results to streaming service.
 
 ### 3. Streaming Service (`streaming_service/`)
