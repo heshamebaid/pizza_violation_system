@@ -1,0 +1,38 @@
+# Core dependencies for all services
+opencv-python==4.8.1.78
+numpy==1.24.3
+pillow==10.0.1
+pyyaml==6.0.1
+
+# Message Broker (RabbitMQ - easier for development)
+pika==1.3.2
+
+# Alternative: Kafka (uncomment if using Kafka instead of RabbitMQ)
+# kafka-python==2.0.2
+
+# Detection Service - YOLOv8 and Deep Learning
+ultralytics==8.0.196
+torch==2.0.1
+torchvision==0.15.2
+deep-sort-realtime==1.3.2
+
+# Streaming Service - FastAPI and WebSocket
+fastapi==0.104.1
+uvicorn==0.24.0
+websockets==12.0
+python-multipart==0.0.6
+
+# Frontend (if using Streamlit for quick prototyping)
+streamlit==1.28.1
+
+# Alternative: React frontend dependencies (install via npm)
+# Node.js and npm required for React frontend
+
+# Database (SQLite for development, PostgreSQL for production)
+# sqlite3 is built-in with Python, no need to install
+
+# Utilities
+requests==2.31.0
+python-dotenv==1.0.0 
+
+ deep-sort-realtime

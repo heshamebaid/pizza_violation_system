@@ -1,0 +1,32 @@
+# Python virtual environment
+venv/
+
+# Shared data, models, and videos (user-specific, not source code)
+shared/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# VSCode settings
+.vscode/
+
+# MacOS
+.DS_Store
+
+# Logs
+*.log
+
+# Environment variables
+.env
+
+# Streamlit cache
+.streamlit/
+
+# Other
+*.bak
+*.swp 
