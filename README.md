@@ -103,3 +103,61 @@ Pull requests are welcome! For major changes, please open an issue first to disc
 
 ## License
 MIT License 
+
+---
+
+## Microservices Overview
+
+### 1. Frame Reader Service (`frame_reader/`)
+**Role:** Reads video frames from a file or RTSP camera feed and publishes them to a message broker (RabbitMQ).
+
+- **Main technologies:** Python, OpenCV, pika (RabbitMQ client)
+- **How it works:**
+  - Reads frames from a specified video file or camera stream.
+  - Publishes each frame as a JPEG-encoded message to a RabbitMQ queue.
+  - Decouples video ingestion from detection, allowing for scalable and robust processing.
+
+### 2. Detection Service (`detection_service/`)
+**Role:** Subscribes to the message broker, performs object detection and tracking, applies violation logic, and updates the streaming service.
+
+- **Main technologies:** Python, Ultralytics YOLO, DeepSORT, OpenCV, pika, requests
+- **How it works:**
+  - Receives frames from RabbitMQ.
+  - Runs YOLO object detection to find hands, scoopers, pizzas, and persons.
+  - Tracks hands and scoopers using DeepSORT for consistent IDs across frames.
+  - Loads multiple ROIs from config and checks if hands enter any ROI.
+  - Associates hands with scoopers using IOU.
+  - Flags a violation if a hand leaves any ROI and touches pizza without a scooper.
+  - Sends annotated frames and violation count to the streaming service.
+
+### 3. Streaming Service (`streaming_service/`)
+**Role:** Serves detection results and video frames to the frontend via REST API and WebSocket.
+
+- **Main technologies:** Python, FastAPI, Uvicorn, WebSocket
+- **How it works:**
+  - Receives violation count and annotated frames from the detection service.
+  - Provides a REST endpoint for metadata (e.g., number of violations).
+  - Provides a WebSocket and HTTP endpoint for real-time video frames.
+  - Acts as the backend for the frontend UI.
+
+### 4. Frontend UI (`frontend/`)
+**Role:** Visualizes the video stream, bounding boxes, ROIs, and violation events for the user.
+
+- **Main technologies:** Streamlit (for rapid prototyping), requests
+- **How it works:**
+  - Connects to the streaming service to fetch the latest video frame and violation count.
+  - Displays the current frame with all detections and ROIs drawn.
+  - Shows the live count of violations and updates in real time.
+
+### 5. Shared Resources (`shared/`)
+**Role:** Stores all shared data, models, configs, and videos used by the system.
+
+- **Contents:**
+  - `dataset/`: Training/validation data (if retraining YOLO)
+  - `model/`: Pretrained YOLO weights
+  - `videos/`: Test and input videos
+  - `roi_config.yaml`: User-defined ROIs for detection
+
+---
+
+Each service is modular and can be developed, tested, and scaled independently. The message broker (RabbitMQ) ensures robust communication and decoupling between services, making the system scalable and maintainable. 

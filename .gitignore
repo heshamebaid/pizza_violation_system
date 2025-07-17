@@ -1,8 +1,10 @@
 # Python virtual environment
 venv/
 
-# Shared data, models, and videos (user-specific, not source code)
-shared/
+# Ignore everything in shared except roi_config.yaml and model/
+shared/*
+!shared/roi_config.yaml
+!shared/model/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
