@@ -1,6 +1,68 @@
 # Pizza Store Scooper Violation Detection System
 
+---
+
+## Project Overview
 This project is a microservices-based computer vision system for monitoring hygiene protocol compliance in a pizza store. It detects whether workers use a scooper when picking up ingredients from critical zones (ROIs) and flags violations in real time.
+
+---
+
+## Features
+- Reads video frames from file or camera
+- Detects hands, scoopers, pizzas, and persons using YOLO
+- Tracks objects with DeepSORT
+- Supports multiple user-defined ROIs (e.g., protein containers)
+- Flags violations if a hand grabs ingredients from any ROI and touches pizza without a scooper
+- Streams annotated video and violation count to a web frontend
+- Modular microservices architecture (frame reader, detection, streaming, frontend)
+
+---
+
+## Microservices Overview
+
+### 1. Frame Reader Service (`frame_reader/`)
+**Role:** Reads video frames from a file or RTSP camera feed and publishes them to a message broker (RabbitMQ).
+- **Technologies:** Python, OpenCV, pika
+- **How it works:** Reads frames, publishes each as a JPEG to RabbitMQ, decoupling video ingestion from detection.
+
+### 2. Detection Service (`detection_service/`)
+**Role:** Subscribes to the message broker, performs object detection and tracking, applies violation logic, and updates the streaming service.
+- **Technologies:** Python, Ultralytics YOLO, DeepSORT, OpenCV, pika, requests
+- **How it works:** Receives frames, runs YOLO, tracks hands/scoopers, checks ROIs, flags violations, sends results to streaming service.
+
+### 3. Streaming Service (`streaming_service/`)
+**Role:** Serves detection results and video frames to the frontend via REST API and WebSocket.
+- **Technologies:** Python, FastAPI, Uvicorn, WebSocket
+- **How it works:** Receives violation count and frames, provides REST/WebSocket endpoints for frontend.
+
+### 4. Frontend UI (`frontend/`)
+**Role:** Visualizes the video stream, bounding boxes, ROIs, and violation events for the user.
+- **Technologies:** Streamlit, requests
+- **How it works:** Connects to streaming service, displays frames and violation count in real time.
+
+### 5. Shared Resources (`shared/`)
+**Role:** Stores all shared data, models, configs, and videos used by the system.
+- **Contents:**
+  - `dataset/`: Training/validation data (if retraining YOLO)
+  - `model/`: Pretrained YOLO weights
+  - `videos/`: Test and input videos
+  - `roi_config.yaml`: User-defined ROIs for detection
+
+---
+
+## Project Structure
+```
+pizza_violation_system/
+├── frame_reader/
+├── detection_service/
+├── streaming_service/
+├── frontend/
+├── shared/
+├── select_rois.py
+├── requirements.txt
+├── docker-compose.yml
+└── README.md
+```
 
 ---
 
@@ -41,6 +103,17 @@ This project is a microservices-based computer vision system for monitoring hygi
 
 ---
 
+### Choosing ROIs (Regions of Interest)
+- The ROI selection script (`select_rois.py`) will display the first frame of your video.
+- Draw up to 8 rectangles with your mouse, each covering a critical ingredient/protein bin.
+- Press `q` when done. The coordinates are saved to `shared/roi_config.yaml`.
+- Make sure the video path in the script matches your detection video.
+- Restart the detection service after updating ROIs.
+
+**Tip:** The order you draw the ROIs is the order they appear in the config file.
+
+---
+
 ## Example ROI Config (`shared/roi_config.yaml`)
 ```yaml
 rois:
@@ -57,7 +130,7 @@ rois:
 ---
 
 ## .gitignore Note
-- The `shared/` directory (datasets, models, videos, ROI configs) and `venv/` (virtual environment) are **ignored by git** and will not be committed.
+- The `shared/` directory (datasets, models, videos, ROI configs) and `venv/` (virtual environment) are **ignored by git** and will not be committed, except for `shared/roi_config.yaml` and `shared/model/`.
 - If you want to share a sample ROI config, copy it to a different location or provide an example in the README.
 
 ---
@@ -84,18 +157,6 @@ python select_rois.py
 
 ---
 
-### Choosing ROIs (Regions of Interest)
-
-- The ROI selection script (`select_rois.py`) will display the first frame of your video.
-- Draw up to 8 rectangles with your mouse, each covering a critical ingredient/protein bin.
-- Press `q` when done. The coordinates are saved to `shared/roi_config.yaml`.
-- Make sure the video path in the script matches your detection video.
-- Restart the detection service after updating ROIs.
-
-**Tip:** The order you draw the ROIs is the order they appear in the config file.
-
----
-
 ## Contributing
 Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
 
@@ -103,61 +164,3 @@ Pull requests are welcome! For major changes, please open an issue first to disc
 
 ## License
 MIT License 
-
----
-
-## Microservices Overview
-
-### 1. Frame Reader Service (`frame_reader/`)
-**Role:** Reads video frames from a file or RTSP camera feed and publishes them to a message broker (RabbitMQ).
-
-- **Main technologies:** Python, OpenCV, pika (RabbitMQ client)
-- **How it works:**
-  - Reads frames from a specified video file or camera stream.
-  - Publishes each frame as a JPEG-encoded message to a RabbitMQ queue.
-  - Decouples video ingestion from detection, allowing for scalable and robust processing.
-
-### 2. Detection Service (`detection_service/`)
-**Role:** Subscribes to the message broker, performs object detection and tracking, applies violation logic, and updates the streaming service.
-
-- **Main technologies:** Python, Ultralytics YOLO, DeepSORT, OpenCV, pika, requests
-- **How it works:**
-  - Receives frames from RabbitMQ.
-  - Runs YOLO object detection to find hands, scoopers, pizzas, and persons.
-  - Tracks hands and scoopers using DeepSORT for consistent IDs across frames.
-  - Loads multiple ROIs from config and checks if hands enter any ROI.
-  - Associates hands with scoopers using IOU.
-  - Flags a violation if a hand leaves any ROI and touches pizza without a scooper.
-  - Sends annotated frames and violation count to the streaming service.
-
-### 3. Streaming Service (`streaming_service/`)
-**Role:** Serves detection results and video frames to the frontend via REST API and WebSocket.
-
-- **Main technologies:** Python, FastAPI, Uvicorn, WebSocket
-- **How it works:**
-  - Receives violation count and annotated frames from the detection service.
-  - Provides a REST endpoint for metadata (e.g., number of violations).
-  - Provides a WebSocket and HTTP endpoint for real-time video frames.
-  - Acts as the backend for the frontend UI.
-
-### 4. Frontend UI (`frontend/`)
-**Role:** Visualizes the video stream, bounding boxes, ROIs, and violation events for the user.
-
-- **Main technologies:** Streamlit (for rapid prototyping), requests
-- **How it works:**
-  - Connects to the streaming service to fetch the latest video frame and violation count.
-  - Displays the current frame with all detections and ROIs drawn.
-  - Shows the live count of violations and updates in real time.
-
-### 5. Shared Resources (`shared/`)
-**Role:** Stores all shared data, models, configs, and videos used by the system.
-
-- **Contents:**
-  - `dataset/`: Training/validation data (if retraining YOLO)
-  - `model/`: Pretrained YOLO weights
-  - `videos/`: Test and input videos
-  - `roi_config.yaml`: User-defined ROIs for detection
-
----
-
-Each service is modular and can be developed, tested, and scaled independently. The message broker (RabbitMQ) ensures robust communication and decoupling between services, making the system scalable and maintainable. 
