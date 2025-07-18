@@ -12,7 +12,7 @@ This project is a microservices-based computer vision system for monitoring hygi
 - Detects hands, scoopers, pizzas, and persons using YOLO
 - Tracks objects with DeepSORT
 - Supports multiple user-defined ROIs (e.g., protein containers)
-- Flags violations only if a hand intersects an ROI and then later touches the pizza without holding a scooper. If the hand is holding a scooper when touching the pizza, no violation is flagged. Each hand is tracked independently across frames, and the ROI state is reset after the hand touches the pizza.
+- Flags violations only if a hand enters an ROI and then later touches the pizza without holding a scooper. If the hand is holding a scooper when touching the pizza, no violation is flagged. After a correct scooper use (touches pizza with scooper), the hand must leave the ROI before a new violation can be triggered. While in the ROI after correct use, no violation is possible until the hand leaves and re-enters the ROI. Each hand is tracked independently across frames.
 - Lowered hand detection threshold for higher recall, improving detection of small or partially occluded hands.
 - Tuned DeepSORT tracking parameters (higher max_age, min_hits) for more robust hand tracking, especially with multiple workers.
 - Temporal smoothing: hand tracks are kept alive for a few frames even if missed, handling short occlusions and improving multi-worker tracking.
@@ -34,11 +34,11 @@ This project is a microservices-based computer vision system for monitoring hygi
 - **Technologies:** Python, Ultralytics YOLO, DeepSORT, OpenCV, pika, requests
 - **Logic Summary:**
     - Each hand is tracked independently across frames.
-    - If a hand intersects an ROI, it is marked as "was in ROI".
+    - If a hand enters an ROI, it is marked as "was in ROI".
     - When that hand later touches the pizza:
-        - If holding a scooper: **No violation**
+        - If holding a scooper: **No violation** (and the hand must leave the ROI before a new violation can be triggered)
         - If not holding a scooper: **Violation flagged**
-    - After touching the pizza, the hand's ROI state is reset.
+    - After a correct scooper use (touches pizza with scooper), the hand must leave the ROI before a new violation can be triggered. While in the ROI after correct use, no violation is possible until the hand leaves and re-enters the ROI.
 - **Robustness Improvements:**
     - Lowered hand detection threshold for higher recall.
     - DeepSORT tracker tuned with higher max_age and min_hits for better continuity.
