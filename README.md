@@ -62,6 +62,7 @@ This project is a microservices-based computer vision system for monitoring hygi
   - `dataset/`: Training/validation data (if retraining YOLO)
   - `model/`: Pretrained YOLO weights
   - `videos/`: Test and input videos
+  - `violations/`: Saving the frame in which violation happens.
   - `roi_config.yaml`: User-defined ROIs for detection
 
 ---
