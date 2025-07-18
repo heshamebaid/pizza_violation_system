@@ -7,7 +7,7 @@ import yaml
 from datetime import datetime
 from ultralytics import YOLO
 from deep_sort_realtime.deepsort_tracker import DeepSort
-from .violation_db import save_violation
+from violation_db import save_violation
 
 VIOLATION_DIR = os.path.join(os.path.dirname(__file__), '..', 'shared', 'violations')
 os.makedirs(VIOLATION_DIR, exist_ok=True)
