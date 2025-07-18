@@ -145,6 +145,12 @@ rois:
 
 ---
 
+## Violation Frame Storage
+- When a violation is detected, the corresponding video frame is saved as an image in the `shared/violations/` directory. Each file is named with the violation details (frame ID, hand ID, timestamp).
+- This directory is created automatically if it does not exist.
+
+---
+
 ## .gitignore Note
 - The `shared/` directory (datasets, models, videos, ROI configs) and `venv/` (virtual environment) are **ignored by git** and will not be committed, except for `shared/roi_config.yaml` and `shared/model/`.
 - If you want to share a sample ROI config, copy it to a different location or provide an example in the README.
