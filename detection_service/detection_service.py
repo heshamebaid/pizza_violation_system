@@ -12,6 +12,13 @@ from violation_db import save_violation
 VIOLATION_DIR = os.path.join(os.path.dirname(__file__), '..', 'shared', 'violations')
 os.makedirs(VIOLATION_DIR, exist_ok=True)
 
+# Add global VideoWriter and output path
+alert_video_writer = None
+alert_video_path = None
+# Add global for alert banner duration
+alert_frames_remaining = 0  # Number of frames to keep alert visible
+ALERT_DURATION_FRAMES = 25  # Show alert for 1 second at 25 FPS
+
 # --- CONFIGURATION ---
 RABBITMQ_HOST = os.environ.get('RABBITMQ_HOST', 'localhost')
 RABBITMQ_QUEUE = os.environ.get('RABBITMQ_QUEUE', 'video_frames')
@@ -30,7 +37,7 @@ def load_rois():
 ROIS = load_rois()
 
 # --- TRACKERS ---
-# Tune DeepSORT: hand_tracker with higher max_age and min_hits
+# Tune DeepSORT: hand_tracker with higher max_age and n_init
 hand_tracker = DeepSort(max_age=60, n_init=2)
 scooper_tracker = DeepSort(max_age=30)
 
@@ -43,11 +50,9 @@ def bbox_center(bbox):
     x1, y1, x2, y2 = bbox
     return ((x1 + x2) / 2, (y1 + y2) / 2)
 
-def in_roi(bbox, roi):
-    x1, y1, x2, y2 = bbox
-    cx, cy = bbox_center(bbox)
-    rx1, ry1, rx2, ry2 = roi
-    return rx1 <= cx <= rx2 and ry1 <= cy <= ry2
+def is_center_in_roi(hand_bbox, roi):
+    cx, cy = bbox_center(hand_bbox)
+    return roi['x1'] <= cx <= roi['x2'] and roi['y1'] <= cy <= roi['y2']
 
 def in_any_roi(bbox, rois):
     x1, y1, x2, y2 = bbox
@@ -168,7 +173,7 @@ def preprocess_frame(frame):
 
 # --- CALLBACK FUNCTION ---
 def callback(ch, method, properties, body):
-    global violation_count
+    global violation_count, alert_video_writer, alert_video_path, alert_frames_remaining
     frame_id = properties.headers.get('frame_id', -1)
     nparr = np.frombuffer(body, np.uint8)
     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -219,6 +224,7 @@ def callback(ch, method, properties, body):
     # --- Stateful, sequential violation logic ---
     MAX_MISSING_FRAMES = 5  # Temporal smoothing for ghost tracks
     active_hand_ids = set()
+    violation_in_this_frame = False
     for track in hand_tracks:
         if not track.is_confirmed():
             # Temporal smoothing: keep state for ghost tracks
@@ -237,12 +243,19 @@ def callback(ch, method, properties, body):
         hand_id = track.track_id
         hand_bbox = tuple(track.to_ltrb())
         # Get or initialize state for this hand
-        state = hand_states.get(hand_id, {"was_in_roi": False, "missing_frames": 0})
+        state = hand_states.get(hand_id, {"was_in_roi": False, "missing_frames": 0, "must_leave_roi": False})
         state['missing_frames'] = 0  # Reset missing frame count on detection
         # Check intersection with any ROI
-        in_roi = any(iou(hand_bbox, (roi['x1'], roi['y1'], roi['x2'], roi['y2'])) > 0.1 for roi in ROIS)
+        in_roi = any(is_center_in_roi(hand_bbox, roi) for roi in ROIS)
         if in_roi:
-            state["was_in_roi"] = True
+            if state.get("must_leave_roi", False):
+                # Must leave ROI before re-arming
+                pass  # Do not set was_in_roi
+            else:
+                state["was_in_roi"] = True
+        else:
+            # If not in ROI, clear must_leave_roi
+            state["must_leave_roi"] = False
         # Check intersection with any pizza
         on_pizza = any(iou(hand_bbox, pizza) > 0.1 for pizza in pizzas)
         # Check if hand is holding a scooper
@@ -252,6 +265,8 @@ def callback(ch, method, properties, body):
             if not holding_scooper:
                 print(f"[Violation] Hand {hand_id} touched pizza after ROI without scooper!")
                 violation_count += 1
+                violation_in_this_frame = True
+                alert_frames_remaining = ALERT_DURATION_FRAMES  # Start/refresh alert duration
                 # Save violation frame
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
                 frame_filename = f"violation_{frame_id}_{hand_id}_{timestamp}.jpg"
@@ -279,6 +294,8 @@ def callback(ch, method, properties, body):
                     labels=["hand"],
                     violation_status=False
                 )
+                # Set must_leave_roi so next ROI entry is ignored until hand leaves ROI
+                state["must_leave_roi"] = True
             # Reset after pizza touch
             state["was_in_roi"] = False
         hand_states[hand_id] = state
@@ -294,6 +311,27 @@ def callback(ch, method, properties, body):
     for hand_id in to_remove:
         hand_states.pop(hand_id, None)
 
+    # --- Save alert video (always enabled) ---
+    if alert_video_writer is None:
+        # Initialize VideoWriter on first frame
+        h, w = frame.shape[:2]
+        fps = 25  # Default FPS, adjust if you have actual FPS info
+        alert_video_path = os.path.join(VIOLATION_DIR, f"alert_video_{datetime.now().strftime('%Y%m%d_%H%M%S')}.avi")
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        alert_video_writer = cv2.VideoWriter(alert_video_path, fourcc, fps, (w, h))
+    frame_to_write = frame.copy()
+    # Overlay violation count (top left corner, in red)
+    count_text = f"Violations: {violation_count}"
+    cv2.putText(frame_to_write, count_text, (30, 60),
+                cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 4, cv2.LINE_AA)
+    # Overlay alert banner if violation or alert is active
+    if alert_frames_remaining > 0:
+        cv2.rectangle(frame_to_write, (0, 0), (frame_to_write.shape[1], 80), (0, 0, 255), -1)  # Red banner
+        cv2.putText(frame_to_write, "VIOLATION DETECTED!", (30, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4, cv2.LINE_AA)
+        alert_frames_remaining -= 1
+    alert_video_writer.write(frame_to_write)
+
     print(f"[Frame {frame_id}] Violations: {violation_count}")
 
 # --- ENTRYPOINT ---
@@ -302,11 +340,20 @@ if __name__ == "__main__":
     model = YOLO(MODEL_PATH)
     print("Model loaded.")
     connection, channel = connect_rabbitmq()
+    # Purge the queue before starting to consume
+    try:
+        channel.queue_purge(queue=RABBITMQ_QUEUE)
+        print(f"Purged queue: {RABBITMQ_QUEUE}")
+    except Exception as e:
+        print(f"Warning: Could not purge queue {RABBITMQ_QUEUE}: {e}")
     channel.basic_consume(queue=RABBITMQ_QUEUE, on_message_callback=callback, auto_ack=True)
     print("Detection service running... Press Ctrl+C to stop.")
     try:
         channel.start_consuming()
     except KeyboardInterrupt:
         print("Stopping detection service...")
+        if alert_video_writer is not None:
+            alert_video_writer.release()
+            print(f"Alert video saved to: {alert_video_path}")
         connection.close()
 

@@ -5,7 +5,6 @@ venv/
 shared/*
 !shared/roi_config.yaml
 !shared/model/
-!shared/violations/
 
 
 # Byte-compiled / optimized / DLL files

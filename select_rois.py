@@ -2,7 +2,7 @@ import cv2
 import yaml
 
 # Path to your video file
-video_path = "shared/videos/Sah b3dha ghalt.mp4"  # Change to your video path
+video_path = "shared/videos/Sah w b3dha ghalt (3).mp4"  
 
 # Read the first frame from the video
 cap = cv2.VideoCapture(video_path)
