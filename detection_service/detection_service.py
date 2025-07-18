@@ -7,6 +7,10 @@ import yaml
 from datetime import datetime
 from ultralytics import YOLO
 from deep_sort_realtime.deepsort_tracker import DeepSort
+from .violation_db import save_violation
+
+VIOLATION_DIR = os.path.join(os.path.dirname(__file__), '..', 'shared', 'violations')
+os.makedirs(VIOLATION_DIR, exist_ok=True)
 
 # --- CONFIGURATION ---
 RABBITMQ_HOST = os.environ.get('RABBITMQ_HOST', 'localhost')
@@ -65,9 +69,16 @@ def hand_near_pizza(hand_bbox, pizzas):
             return True
     return False
 
-def update_streaming_service(violations):
+def update_streaming_service(violations, bboxes=None, labels=None, violation_status=None):
     try:
-        requests.post(STREAMING_SERVICE_URL, json={"violations": violations})
+        payload = {"violations": violations}
+        if bboxes is not None:
+            payload["bboxes"] = bboxes
+        if labels is not None:
+            payload["labels"] = labels
+        if violation_status is not None:
+            payload["violation_status"] = violation_status
+        requests.post(STREAMING_SERVICE_URL, json=payload)
     except Exception as e:
         print("Could not update streaming service:", e)
 
@@ -241,9 +252,33 @@ def callback(ch, method, properties, body):
             if not holding_scooper:
                 print(f"[Violation] Hand {hand_id} touched pizza after ROI without scooper!")
                 violation_count += 1
-                update_streaming_service(violation_count)
+                # Save violation frame
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+                frame_filename = f"violation_{frame_id}_{hand_id}_{timestamp}.jpg"
+                frame_path = os.path.join(VIOLATION_DIR, frame_filename)
+                cv2.imwrite(frame_path, frame)
+                # Save violation metadata
+                save_violation(
+                    frame_path=frame_path,
+                    bboxes=[hand_bbox],
+                    labels=["hand"],
+                    timestamp=timestamp
+                )
+                # Send results to streaming service
+                update_streaming_service(
+                    violation_count,
+                    bboxes=[hand_bbox],
+                    labels=["hand"],
+                    violation_status=True
+                )
             else:
                 print(f"[Hand {hand_id}] used scooper correctly after ROI.")
+                update_streaming_service(
+                    violation_count,
+                    bboxes=[hand_bbox],
+                    labels=["hand"],
+                    violation_status=False
+                )
             # Reset after pizza touch
             state["was_in_roi"] = False
         hand_states[hand_id] = state

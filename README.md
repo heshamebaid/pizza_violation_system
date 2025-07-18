@@ -17,6 +17,7 @@ This project is a microservices-based computer vision system for monitoring hygi
 - Tuned DeepSORT tracking parameters (higher max_age, min_hits) for more robust hand tracking, especially with multiple workers.
 - Temporal smoothing: hand tracks are kept alive for a few frames even if missed, handling short occlusions and improving multi-worker tracking.
 - Streams annotated video and violation count to a web frontend
+- Real-time alarm: The frontend displays a red warning box and violation details (bounding boxes, labels) when a violation is detected
 - Modular microservices architecture (frame reader, detection, streaming, frontend)
 
 ---
@@ -53,6 +54,7 @@ This project is a microservices-based computer vision system for monitoring hygi
 **Role:** Visualizes the video stream, bounding boxes, ROIs, and violation events for the user.
 - **Technologies:** Streamlit, requests
 - **How it works:** Connects to streaming service, displays frames and violation count in real time.
+- **Alarm Feature:** When a violation is detected, a red warning box appears in the UI, along with bounding boxes and labels for the violation. The alarm clears automatically when no violation is present.
 
 ### 5. Shared Resources (`shared/`)
 **Role:** Stores all shared data, models, configs, and videos used by the system.
