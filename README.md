@@ -106,7 +106,7 @@ pizza_violation_system/
    - Place your test videos in `shared/videos/`
    - Place your YOLO model weights in `shared/model/`
 6. **Define ROIs:**
-   - Run the interactive script to select up to 8 ROIs on the first frame of your video:
+   - Run the interactive script to select up to 10 ROIs on the first frame of your video:
      ```bash
      python select_rois.py
      ```
