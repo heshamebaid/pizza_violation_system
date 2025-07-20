@@ -1,9 +1,30 @@
+metadata:
+  created_date: '2025-07-19T18:39:04.620646'
+  video_source: Sah w b3dha ghalt (2).mp4
+  frame_resolution: 1702x1038
+  total_rois: 3
 rois:
-- x1: 415
-  x2: 456
-  y1: 529
-  y2: 574
-- x1: 454
-  x2: 499
-  y1: 341
-  y2: 376
+- name: Cheese
+  x1: 458
+  y1: 352
+  x2: 505
+  y2: 384
+  area: 1504
+  center_x: 481
+  center_y: 368
+- name: souce
+  x1: 447
+  y1: 405
+  x2: 488
+  y2: 435
+  area: 1230
+  center_x: 467
+  center_y: 420
+- name: Onions
+  x1: 416
+  y1: 538
+  x2: 465
+  y2: 583
+  area: 2205
+  center_x: 440
+  center_y: 560
