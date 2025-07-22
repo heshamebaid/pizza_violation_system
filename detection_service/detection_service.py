@@ -12,13 +12,14 @@ from violation_db import save_violation
 VIOLATION_DIR = os.path.join(os.path.dirname(__file__), '..', 'shared', 'violations')
 os.makedirs(VIOLATION_DIR, exist_ok=True)
 
-# Add global VideoWriter and output path
+# global VideoWriter and output path
 alert_video_writer = None
 alert_video_path = None
-# Add global for alert banner duration
+#  global for alert banner duration
 alert_frames_remaining = 0  # Number of frames to keep alert visible
-ALERT_DURATION_FRAMES = 25  # Show alert for 1 second at 25 FPS
-VIOLATION_COOLDOWN_FRAMES = 5  # Number of frames to wait before allowing another violation for the same hand
+ALERT_DURATION_FRAMES = 10  # Show alert for 1 second at 25 FPS
+VIOLATION_COOLDOWN_FRAMES = 50  # Number of frames to wait before allowing another violation for the same hand
+SCOOPER_GRACE_FRAMES = 50  # Number of frames after releasing scooper during which no violation is triggered
 
 # --- CONFIGURATION ---
 RABBITMQ_HOST = os.environ.get('RABBITMQ_HOST', 'localhost')
@@ -47,7 +48,8 @@ hand_states = {}  # hand_id: state info
 violation_count = 0
 # Buffer for recently lost hands to handle ID switches
 recently_lost_hands = {}  # hand_id: {"state": ..., "last_bbox": ..., "last_seen_frame": ...}
-RECENTLY_LOST_MAX_AGE = 20  # frames (increased from 10)
+RECENTLY_LOST_MAX_AGE = 20  # frames 
+SCOOPER_GRACE_FRAMES = 10  # Number of frames after releasing scooper during which no violation is triggered
 
 # --- UTILS ---
 def bbox_center(bbox):
@@ -246,6 +248,16 @@ def callback(ch, method, properties, body):
     scooper_tracks = scooper_tracker.update_tracks(scooper_detections, frame=frame)
     scooper_bboxes = [tuple(t.to_ltrb()) for t in scooper_tracks if t.is_confirmed()]
 
+    # --- Identify which hands are holding a scooper ---
+    hands_with_scooper = set()
+    for track in hand_tracks:
+        if not track.is_confirmed():
+            continue
+        hand_id = track.track_id
+        hand_bbox = tuple(track.to_ltrb())
+        if any(iou(hand_bbox, s) > 0.1 for s in scooper_bboxes):
+            hands_with_scooper.add(hand_id)
+
     # --- Stateful, sequential violation logic ---
     MAX_MISSING_FRAMES = 5  # Temporal smoothing for ghost tracks
     active_hand_ids = set()
@@ -271,6 +283,7 @@ def callback(ch, method, properties, body):
             best_match_id = None
             best_dist = float('inf')
             best_feat_dist = float('inf')
+            best_reason = None
             for lost_id, lost_info in recently_lost_hands.items():
                 lost_bbox = lost_info["last_bbox"]
                 dist = np.linalg.norm(np.array(bbox_center(hand_bbox)) - np.array(bbox_center(lost_bbox)))
@@ -282,18 +295,21 @@ def callback(ch, method, properties, body):
                     # Use cosine distance for appearance features
                     feat_dist = 1 - np.dot(new_feat, lost_feat) / (np.linalg.norm(new_feat) * np.linalg.norm(lost_feat) + 1e-6)
                 # Prefer feature match if available and close
-                if feat_dist is not None and feat_dist < 0.3 and age <= RECENTLY_LOST_MAX_AGE:
+                if feat_dist is not None and feat_dist < 0.4 and age <= RECENTLY_LOST_MAX_AGE:
                     if feat_dist < best_feat_dist:
                         best_feat_dist = feat_dist
                         best_match_id = lost_id
-                # Otherwise, fallback to spatial match
-                elif dist < 100 and age <= RECENTLY_LOST_MAX_AGE:
+                        best_reason = f"appearance (feat_dist={feat_dist:.3f}, age={age})"
+                # Otherwise, fallback to spatial match (increase threshold to 150)
+                elif dist < 150 and age <= RECENTLY_LOST_MAX_AGE:
                     if dist < best_dist:
                         best_dist = dist
                         best_match_id = lost_id
+                        best_reason = f"spatial (dist={dist:.1f}, age={age})"
             if best_match_id is not None:
-                print(f"[DEBUG] Transferring state from lost hand {best_match_id} to new hand {hand_id}")
-                hand_states[hand_id] = recently_lost_hands[best_match_id]["state"]
+                print(f"[DEBUG] Transferring state from lost hand {best_match_id} to new hand {hand_id} ({best_reason})")
+                # Always transfer full state, including grace period
+                hand_states[hand_id] = recently_lost_hands[best_match_id]["state"].copy()
                 del recently_lost_hands[best_match_id]
             else:
                 print(f"[DEBUG] No match found for new hand {hand_id} (bbox={hand_bbox})")
@@ -332,7 +348,7 @@ def callback(ch, method, properties, body):
         hand_id = track.track_id
         hand_bbox = tuple(track.to_ltrb())
         # Save last_bbox in state for lost hand recovery
-        state = hand_states.get(hand_id, {"was_in_roi": False, "missing_frames": 0, "must_leave_roi": False, "violation_cooldown": 0, "must_leave_pizza_and_roi": False})
+        state = hand_states.get(hand_id, {"was_in_roi": False, "missing_frames": 0, "must_leave_roi": False, "violation_cooldown": 0, "must_leave_pizza_and_roi": False, "recently_had_scooper": 0})
         state['last_bbox'] = hand_bbox
         # Check intersection with any ROI (using center only)
         in_roi = any(is_center_in_roi(hand_bbox, roi) for roi in ROIS)
@@ -341,8 +357,12 @@ def callback(ch, method, properties, body):
             state['violation_cooldown'] -= 1
         # Check intersection with any pizza (using minimum overlap, now 5%)
         on_pizza = any(sufficient_overlap(hand_bbox, pizza, min_ratio=0.05) for pizza in pizzas)
-        # Check if hand is holding a scooper
-        holding_scooper = any(iou(hand_bbox, s) > 0.1 for s in scooper_bboxes)
+        # Check if this hand is holding a scooper
+        holding_scooper = hand_id in hands_with_scooper
+        if holding_scooper:
+            state["recently_had_scooper"] = SCOOPER_GRACE_FRAMES  # reset grace counter
+        elif state["recently_had_scooper"] > 0:
+            state["recently_had_scooper"] -= 1  # countdown
         # Robust state: must leave both pizza and ROI after a violation
         if state.get('must_leave_pizza_and_roi', False):
             if not on_pizza and not in_roi:
@@ -356,7 +376,8 @@ def callback(ch, method, properties, body):
         # Violation: hand was in ROI, now on pizza, and not holding scooper
         if on_pizza and state["was_in_roi"]:
             if state.get('violation_cooldown', 0) == 0:
-                if not any_hand_holding_scooper:
+                # CHANGED: Skip violation if any hand holding scooper OR this hand recently had one
+                if not any_hand_holding_scooper and state["recently_had_scooper"] == 0:
                     print(f"[Violation] Hand {hand_id} touched pizza after ROI without scooper!")
                     violation_count += 1
                     violation_in_this_frame = True
@@ -385,16 +406,14 @@ def callback(ch, method, properties, body):
                     # Set must_leave_pizza_and_roi so next violation is not counted until hand leaves both
                     state['must_leave_pizza_and_roi'] = True
                 else:
-                    print(f"[Hand {hand_id}] used scooper correctly after ROI (group logic, any hand has scooper).")
+                    print(f"[Hand {hand_id}] used scooper correctly after ROI or grace period.")
                     update_streaming_service(
                         violation_count,
                         bboxes=[hand_bbox],
                         labels=["hand"],
                         violation_status=False
                     )
-                    # Set must_leave_roi so next ROI entry is ignored until hand leaves ROI
                     state["must_leave_roi"] = True
-            # Reset after pizza touch
             state["was_in_roi"] = False
         # If hand is not on pizza, allow new violation after cooldown
         if not on_pizza:
@@ -479,4 +498,3 @@ if __name__ == "__main__":
             alert_video_writer.release()
             print(f"Alert video saved to: {alert_video_path}")
         connection.close()
-

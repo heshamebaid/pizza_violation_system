@@ -1,30 +1,30 @@
 metadata:
-  created_date: '2025-07-19T18:39:04.620646'
-  video_source: Sah w b3dha ghalt (2).mp4
-  frame_resolution: 1702x1038
+  created_date: '2025-07-22T13:47:41.194393'
+  video_source: Sah w b3dha ghalt.mp4
+  frame_resolution: 1714x1028
   total_rois: 3
 rois:
 - name: Cheese
-  x1: 458
-  y1: 352
-  x2: 505
-  y2: 384
-  area: 1504
-  center_x: 481
-  center_y: 368
-- name: souce
-  x1: 447
-  y1: 405
-  x2: 488
-  y2: 435
-  area: 1230
-  center_x: 467
-  center_y: 420
+  x1: 369
+  y1: 338
+  x2: 427
+  y2: 375
+  area: 2146
+  center_x: 398
+  center_y: 356
+- name: Souce
+  x1: 357
+  y1: 394
+  x2: 411
+  y2: 432
+  area: 2052
+  center_x: 384
+  center_y: 413
 - name: Onions
-  x1: 416
-  y1: 538
-  x2: 465
-  y2: 583
-  area: 2205
-  center_x: 440
-  center_y: 560
+  x1: 319
+  y1: 529
+  x2: 383
+  y2: 574
+  area: 2880
+  center_x: 351
+  center_y: 551
