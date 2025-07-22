@@ -121,11 +121,21 @@ pizza_violation_system/
 ---
 
 ### Choosing ROIs (Regions of Interest)
-- The ROI selection script (`select_rois.py`) will display the first frame of your video.
-- Draw up to 8 rectangles with your mouse, each covering a critical ingredient/protein bin.
-- Press `q` when done. The coordinates are saved to `shared/roi_config.yaml`.
-- Make sure the video path in the script matches your detection video.
-- Restart the detection service after updating ROIs.
+- The ROI selection script (`select_rois.py`) opens the first frame of your video and allows you to draw **up to 10 rectangles**, each representing a critical ingredient/protein bin.
+- **Custom ROI naming:** After drawing each ROI, a popup will prompt you to enter a custom name. If you skip naming, a default name like `ROI_1`, `ROI_2`, etc., is used.
+- **Keyboard controls:**
+  - **Left click & drag:** Draw ROI rectangle.
+  - **r:** Remove the last ROI.
+  - **c:** Clear all ROIs.
+  - **s:** Save all ROIs to `shared/roi_config.yaml` and exit. A labeled reference image (`roi_config_reference.jpg`) is also saved.
+  - **q:** Exit without saving.
+- **ROI details saved:** Each ROI entry includes name, coordinates (`x1`, `y1`, `x2`, `y2`), area, and center point, along with metadata (creation date, video source, frame resolution, total ROIs).
+- **Preloading existing ROIs:** If `shared/roi_config.yaml` exists, previously saved ROIs are loaded and displayed for editing.
+- **Tip:** Ensure the `video_path` in `select_rois.py` matches your detection video. You can modify it directly in the script or set it via an environment variable:
+  ```bash
+  export VIDEO_PATH=shared/videos/YourVideo.mp4  # On Mac/Linux
+  set VIDEO_PATH=shared/videos/YourVideo.mp4    # On Windows
+  python select_rois.py
 
 **Tip:** The order you draw the ROIs is the order they appear in the config file.
 
