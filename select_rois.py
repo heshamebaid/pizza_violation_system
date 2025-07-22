@@ -212,7 +212,7 @@ class ROISelector:
         cv2.destroyAllWindows()
 
 def main():
-    video_path = "shared/videos/Sah w b3dha ghalt.mp4"
+    video_path = "shared/videos/Sah w b3dha ghalt (2).mp4"
     config_path = "shared/roi_config.yaml"
     if not os.path.exists(video_path):
         print(f"Error: Video file not found at {video_path}")
